@@ -49,9 +49,19 @@ class EnrollResponse(BaseModel):
     message: str
 
 
+class DeletePersonResponse(BaseModel):
+    deleted_sample_count: int
+    deleted_sighting_count: int
+    message: str
+
+
 class SearchResponse(BaseModel):
     results: list[SearchResultRead]
     sightings_created: list[int]
+
+
+class ClearSightingsResponse(BaseModel):
+    deleted_count: int
 
 
 class HealthResponse(BaseModel):

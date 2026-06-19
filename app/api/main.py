@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db_session, init_db
 from app.models import FaceSample, Person, Sighting
 from app.schemas import (
+    ClearSightingsResponse,
+    DeletePersonResponse,
     EnrollResponse,
     HealthResponse,
     MatchRead,
@@ -149,6 +151,22 @@ def list_people(session: Session = Depends(db_session)) -> list[PersonRead]:
     return [person_to_read(person) for person in people]
 
 
+@app.delete("/people/{person_id}", response_model=DeletePersonResponse)
+def delete_person(person_id: int, session: Session = Depends(db_session)) -> DeletePersonResponse:
+    person = session.get(Person, person_id)
+    if person is None:
+        raise HTTPException(status_code=404, detail="Person not found.")
+
+    deleted_sample_count = len(person.samples)
+    deleted_sighting_count = len(person.sightings)
+    session.delete(person)
+    return DeletePersonResponse(
+        deleted_sample_count=deleted_sample_count,
+        deleted_sighting_count=deleted_sighting_count,
+        message=f"Removed enrolled user '{person.name}'.",
+    )
+
+
 @app.get("/people/{person_id}/sightings", response_model=list[SightingRead])
 def list_person_sightings(person_id: int, session: Session = Depends(db_session)) -> list[SightingRead]:
     sightings = (
@@ -161,3 +179,15 @@ def list_person_sightings(person_id: int, session: Session = Depends(db_session)
         .all()
     )
     return [sighting_to_read(sighting) for sighting in sightings]
+
+
+@app.delete("/people/{person_id}/sightings", response_model=ClearSightingsResponse)
+def clear_person_sightings(person_id: int, session: Session = Depends(db_session)) -> ClearSightingsResponse:
+    person = session.get(Person, person_id)
+    if person is None:
+        raise HTTPException(status_code=404, detail="Person not found.")
+
+    deleted_count = session.execute(
+        delete(Sighting).where(Sighting.person_id == person_id)
+    ).rowcount
+    return ClearSightingsResponse(deleted_count=deleted_count or 0)

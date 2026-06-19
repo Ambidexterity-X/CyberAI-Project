@@ -24,36 +24,55 @@ The project uses `face_recognition`, which depends on native build tooling on Wi
 
 ## Setup
 
-1. Install Python `3.11.9` if it is not already available.
-2. Install the Microsoft Visual C++ Build Tools on Windows if you do not already have them.
-3. Create and activate a virtual environment named `.venv311`:
+1. On Windows, install a package manager if you do not already have one. `winget` is included with recent versions of Windows; if you prefer, you can use `Chocolatey` instead.
+2. Install Python `3.11` on Windows:
 
 ```bash
-py -3.11 -m venv .venv311
-.venv311\Scripts\activate
+winget install Python.Python.3.11
 ```
 
-4. Upgrade pip and install dependencies:
+3. Install the Microsoft Visual C++ Build Tools on Windows if you do not already have them.
+4. Create a virtual environment named `.venv`:
+
+```bash
+py -3.11 -m venv .venv
+```
+
+5. Activate the virtual environment:
+
+PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Command Prompt:
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+6. Upgrade pip and install dependencies:
 
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-5. Copy `.env.example` to `.env` if you want to override defaults.
-6. Set the database URL if you want PostgreSQL:
+7. Copy `.env.example` to `.env` if you want to override defaults.
+8. Set the database URL if you want PostgreSQL:
 
 ```bash
 set DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyberai
 ```
 
-7. Run the backend:
+9. Run the backend:
 
 ```bash
 uvicorn app.api.main:app --reload
 ```
 
-8. Run the UI:
+10. Run the UI:
 
 ```bash
 streamlit run streamlit_app.py
@@ -61,9 +80,9 @@ streamlit run streamlit_app.py
 
 ## Windows Notes
 
-If installation fails while building `face_recognition` or one of its dependencies, install the Visual C++ Build Tools from Microsoft and retry the `pip install -r requirements.txt` step inside `.venv311`.
+If installation fails while building `face_recognition` or one of its dependencies, install the Visual C++ Build Tools from Microsoft and retry the `pip install -r requirements.txt` step inside `.venv`.
 
-The repository was last verified with Python `3.11.9` in `.venv311`.
+The repository was last verified with Python `3.11.9` in `.venv`.
 
 ## Notes
 

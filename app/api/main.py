@@ -1,62 +1,38 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from app.config import get_settings
-from app.database import get_db_session, init_db
-from app.models import FaceSample, Person, Sighting
 from app.schemas import (
-    ClearSightingsResponse,
     DeletePersonResponse,
     EnrollResponse,
     HealthResponse,
-    MatchRead,
+    ImageMatchRead,
+    ImageResultRead,
     PersonRead,
-    SearchResponse,
-    SearchResultRead,
-    SightingRead,
+    ScanResponse,
 )
-from app.services.face import FaceDetectionError, embedding_to_json, extract_embeddings
-from app.services.search import search_and_optionally_record
+from app.services.face import FaceDetectionError, extract_embeddings
+from app.services.search import scan_shared_directory
 from app.services.storage import save_upload
+from app.store import (
+    delete_person,
+    get_all_people,
+    get_person_by_id,
+    upsert_person_with_sample,
+)
 
 settings = get_settings()
 app = FastAPI(title=settings.api_title)
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()
-
-
-def db_session():
-    with get_db_session() as session:
-        yield session
-
-
-def person_to_read(person: Person) -> PersonRead:
+def _person_read(person) -> PersonRead:
     return PersonRead(
-        id=person.id,
-        name=person.name,
-        created_at=person.created_at,
-        updated_at=person.updated_at,
-    )
-
-
-def sighting_to_read(sighting: Sighting) -> SightingRead:
-    person_name = sighting.person.name if sighting.person else None
-    return SightingRead(
-        id=sighting.id,
-        person_id=sighting.person_id,
-        person_name=person_name,
-        image_path=sighting.image_path,
-        location=sighting.location,
-        spotted_at=sighting.spotted_at,
-        confidence=sighting.confidence,
-        face_index=sighting.face_index,
-        notes=sighting.notes,
+        id=person["id"],
+        name=person["name"],
+        created_at=person["created_at"],
+        updated_at=person["updated_at"],
+        sample_count=len(person["samples"]),
     )
 
 
@@ -69,7 +45,6 @@ def health() -> HealthResponse:
 async def enroll_person(
     name: str = Form(...),
     image: UploadFile = File(...),
-    session: Session = Depends(db_session),
 ) -> EnrollResponse:
     content = await image.read()
     stored_path = save_upload(settings.uploads_dir, image.filename, content)
@@ -84,110 +59,82 @@ async def enroll_person(
             detail="Enrollment images must contain exactly one clear face.",
         )
 
-    person = session.scalar(select(Person).where(Person.name == name))
-    if person is None:
-        person = Person(name=name)
-        session.add(person)
-        session.flush()
-
-    sample = FaceSample(
-        person_id=person.id,
+    enc = embeddings[0]
+    person, sample = upsert_person_with_sample(
+        settings.registry_path,
+        name=name,
+        embedding=enc.embedding,
+        face_index=enc.face_index,
         image_path=stored_path,
-        embedding_json=embedding_to_json(embeddings[0].embedding),
-        face_index=embeddings[0].face_index,
     )
-    session.add(sample)
-    session.flush()
 
     return EnrollResponse(
-        person=person_to_read(person),
-        sample_id=sample.id,
+        person=_person_read(person),
+        sample_id=sample["sample_id"],
         image_path=stored_path,
-        face_index=embeddings[0].face_index,
+        face_index=enc.face_index,
         message="Person enrolled successfully.",
     )
 
 
-@app.post("/search", response_model=SearchResponse)
-async def search_faces(
-    image: UploadFile = File(...),
-    location: str | None = Form(default=None),
-    record_sightings: bool = Form(default=True),
+@app.post("/scan", response_model=ScanResponse)
+def scan_faces(
     threshold: float | None = Form(default=None),
-    session: Session = Depends(db_session),
-) -> SearchResponse:
-    content = await image.read()
-    stored_path = save_upload(settings.uploads_dir, image.filename, content)
+) -> ScanResponse:
+    cutoff = threshold if threshold is not None else settings.match_threshold
+    people = get_all_people(settings.registry_path)
 
-    try:
-        embeddings = extract_embeddings(content)
-    except FaceDetectionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not people:
+        raise HTTPException(status_code=400, detail="No enrolled people to match against.")
 
-    results, sighting_ids = search_and_optionally_record(
-        session,
-        embeddings,
-        image_path=stored_path,
-        location=location,
-        record_sightings=record_sightings,
-        threshold=threshold,
-    )
+    all_images = [
+        p for p in sorted(settings.shared_dir.iterdir())
+        if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    ]
 
-    return SearchResponse(
+    results = scan_shared_directory(settings.shared_dir, people, cutoff)
+
+    return ScanResponse(
+        images_scanned=len(all_images),
+        images_matched=len(results),
+        shared_dir=str(settings.shared_dir),
         results=[
-            SearchResultRead(
-                face_index=item["face_index"],
-                matches=[MatchRead(**match) for match in item["matches"]],
+            ImageResultRead(
+                image_path=r.image_path,
+                captured_at=r.captured_at,
+                latitude=r.latitude,
+                longitude=r.longitude,
+                matches=[
+                    ImageMatchRead(
+                        person_id=m.person_id,
+                        person_name=m.person_name,
+                        score=m.score,
+                        face_index=m.face_index,
+                        sample_id=m.sample_id,
+                    )
+                    for m in r.matches
+                ],
             )
-            for item in results
+            for r in results
         ],
-        sightings_created=sighting_ids,
     )
 
 
 @app.get("/people", response_model=list[PersonRead])
-def list_people(session: Session = Depends(db_session)) -> list[PersonRead]:
-    people = session.scalars(select(Person).order_by(Person.name.asc())).all()
-    return [person_to_read(person) for person in people]
+def list_people() -> list[PersonRead]:
+    return [_person_read(p) for p in get_all_people(settings.registry_path)]
 
 
 @app.delete("/people/{person_id}", response_model=DeletePersonResponse)
-def delete_person(person_id: int, session: Session = Depends(db_session)) -> DeletePersonResponse:
-    person = session.get(Person, person_id)
+def remove_person(person_id: int) -> DeletePersonResponse:
+    person = get_person_by_id(settings.registry_path, person_id)
     if person is None:
         raise HTTPException(status_code=404, detail="Person not found.")
 
-    deleted_sample_count = len(person.samples)
-    deleted_sighting_count = len(person.sightings)
-    session.delete(person)
+    sample_count = len(person["samples"])
+    delete_person(settings.registry_path, person_id)
+
     return DeletePersonResponse(
-        deleted_sample_count=deleted_sample_count,
-        deleted_sighting_count=deleted_sighting_count,
-        message=f"Removed enrolled user '{person.name}'.",
+        deleted_sample_count=sample_count,
+        message=f"Removed enrolled user '{person['name']}'.",
     )
-
-
-@app.get("/people/{person_id}/sightings", response_model=list[SightingRead])
-def list_person_sightings(person_id: int, session: Session = Depends(db_session)) -> list[SightingRead]:
-    sightings = (
-        session.scalars(
-            select(Sighting)
-            .where(Sighting.person_id == person_id)
-            .order_by(Sighting.spotted_at.desc())
-        )
-        .unique()
-        .all()
-    )
-    return [sighting_to_read(sighting) for sighting in sightings]
-
-
-@app.delete("/people/{person_id}/sightings", response_model=ClearSightingsResponse)
-def clear_person_sightings(person_id: int, session: Session = Depends(db_session)) -> ClearSightingsResponse:
-    person = session.get(Person, person_id)
-    if person is None:
-        raise HTTPException(status_code=404, detail="Person not found.")
-
-    deleted_count = session.execute(
-        delete(Sighting).where(Sighting.person_id == person_id)
-    ).rowcount
-    return ClearSightingsResponse(deleted_count=deleted_count or 0)

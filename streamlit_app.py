@@ -404,7 +404,7 @@ with tab_search:
                         payload = response.json()
                         st.success(f"Created sightings: {payload['sightings_created']}")
                         for face_result in payload["results"]:
-                            st.markdown(f"### Detected face {face_result['face_index']}")
+                            st.markdown("### Detected face")
                             if not face_result["matches"]:
                                 st.info("No stored faces matched this detection.")
                                 continue
@@ -439,40 +439,6 @@ with tab_history:
                 st.info("No enrolled people yet.")
             else:
                 selected = st.selectbox("Select person", options=people, format_func=lambda item: item["name"])
-
-                st.divider()
-                st.subheader("Remove enrolled user")
-                st.warning(
-                    "This permanently deletes the person, their face samples, and their associated sightings."
-                )
-                confirm_remove = st.checkbox(
-                    f"I understand this will remove {selected['name']} from enrollment.",
-                    key=f"confirm_remove_{selected['id']}",
-                )
-                if st.button(
-                    "Remove enrolled user",
-                    type="secondary",
-                    disabled=not confirm_remove,
-                    key=f"remove_person_{selected['id']}",
-                ):
-                    try:
-                        delete_response = api_delete(f"/people/{selected['id']}")
-                    except requests.RequestException as exc:
-                        st.error(f"Could not reach backend: {exc}")
-                    else:
-                        if delete_response.ok:
-                            payload = delete_response.json()
-                            st.success(payload["message"])
-                            st.info(
-                                "Deleted "
-                                f"{payload['deleted_sample_count']} face sample"
-                                f"{'s' if payload['deleted_sample_count'] != 1 else ''} and "
-                                f"{payload['deleted_sighting_count']} sighting"
-                                f"{'s' if payload['deleted_sighting_count'] != 1 else ''}."
-                            )
-                            st.rerun()
-                        else:
-                            st.error(delete_response.text)
 
                 try:
                     sightings_response = api_get(f"/people/{selected['id']}/sightings")
@@ -543,3 +509,36 @@ with tab_history:
                                         st.error(delete_response.text)
                     else:
                         st.error(sightings_response.text)
+                st.divider()
+                st.subheader("Remove enrolled user")
+                st.warning(
+                    "This permanently deletes the person, their face samples, and their associated sightings."
+                )
+                confirm_remove = st.checkbox(
+                    f"I understand this will remove {selected['name']} from enrollment.",
+                    key=f"confirm_remove_{selected['id']}",
+                )
+                if st.button(
+                    "Remove enrolled user",
+                    type="secondary",
+                    disabled=not confirm_remove,
+                    key=f"remove_person_{selected['id']}",
+                ):
+                    try:
+                        delete_response = api_delete(f"/people/{selected['id']}/sightings")
+                    except requests.RequestException as exc:
+                        st.error(f"Could not reach backend: {exc}")
+                    else:
+                        if delete_response.ok:
+                            payload = delete_response.json()
+                            st.success(payload["message"])
+                            st.info(
+                                "Deleted "
+                                f"{payload['deleted_sample_count']} face sample"
+                                f"{'s' if payload['deleted_sample_count'] != 1 else ''} and "
+                                f"{payload['deleted_sighting_count']} sighting"
+                                f"{'s' if payload['deleted_sighting_count'] != 1 else ''}."
+                            )
+                            st.rerun()
+                        else:
+                            st.error(delete_response.text)

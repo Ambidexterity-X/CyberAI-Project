@@ -426,7 +426,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_enroll, tab_search, tab_history = st.tabs(["🪪 Enroll", "🔎 Search", "📍 History"])
+tab_enroll, tab_search, tab_history, tab_data_management = st.tabs(
+    ["🪪 Enroll", "🔎 Search", "📍 Timeline", "🗂️ Data Managements"]
+)
 
 with tab_enroll:
     st.markdown(
@@ -570,7 +572,7 @@ with tab_history:
             <span class="section-icon">📍</span>
             <div class="section-title">Sighting history</div>
         </div>
-        <div class="section-copy">Browse sightings per person and clear history when you need a clean audit trail.</div>
+        <div class="section-copy">Browse sightings per person in a read-only timeline view.</div>
         """,
         unsafe_allow_html=True,
     )
@@ -668,6 +670,66 @@ with tab_history:
                                         st.error(delete_response.text)
                     else:
                         st.error(sightings_response.text)
+
+with tab_data_management:
+    st.markdown(
+        """
+        <div class="section-header">
+            <span class="section-icon">🗂️</span>
+            <div class="section-title">Data management</div>
+        </div>
+        <div class="section-copy">Select a user and manage their stored sightings or remove them from enrollment.</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    try:
+        people_response = api_get("/people")
+    except requests.RequestException as exc:
+        st.error(f"Could not reach backend: {exc}")
+    else:
+        if not people_response.ok:
+            st.error(people_response.text)
+        else:
+            people = people_response.json()
+            if not people:
+                st.info("No enrolled people yet.")
+            else:
+                selected = st.selectbox("Select person to manage", options=people, format_func=lambda item: item["name"])
+
+                st.markdown(
+                    """
+                    <div class="section-card">
+                        <div class="section-header">
+                            <span class="section-icon">🧹</span>
+                            <div class="section-title">Clear sightings history</div>
+                        </div>
+                        <div class="section-copy">This removes all sightings for the selected person while keeping the enrollment record.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                confirm_clear = st.checkbox(
+                    f"I understand this will delete {selected['name']}'s sightings.",
+                    key=f"management_confirm_clear_{selected['id']}",
+                )
+                if st.button(
+                    "Clear selected history",
+                    type="secondary",
+                    disabled=not confirm_clear,
+                    key=f"management_clear_history_{selected['id']}",
+                ):
+                    try:
+                        delete_response = api_delete(f"/people/{selected['id']}/sightings")
+                    except requests.RequestException as exc:
+                        st.error(f"Could not reach backend: {exc}")
+                    else:
+                        if delete_response.ok:
+                            deleted_count = delete_response.json().get("deleted_count", 0)
+                            st.success(f"Deleted {deleted_count} sighting{'s' if deleted_count != 1 else ''}.")
+                            st.rerun()
+                        else:
+                            st.error(delete_response.text)
+
                 st.divider()
                 st.markdown(
                     """
@@ -683,13 +745,13 @@ with tab_history:
                 )
                 confirm_remove = st.checkbox(
                     f"I understand this will remove {selected['name']} from enrollment.",
-                    key=f"confirm_remove_{selected['id']}",
+                    key=f"management_confirm_remove_{selected['id']}",
                 )
                 if st.button(
                     "Remove enrolled user",
                     type="secondary",
                     disabled=not confirm_remove,
-                    key=f"remove_person_{selected['id']}",
+                    key=f"management_remove_person_{selected['id']}",
                 ):
                     try:
                         delete_response = api_delete(f"/people/{selected['id']}")

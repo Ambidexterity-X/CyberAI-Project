@@ -472,7 +472,6 @@ with tab_history:
                                         <div class="timeline-item">
                                             <div class="timeline-meta">
                                                 <span class="timeline-time">{human_label}</span>
-                                                <span class="timeline-pill">Face #{sighting["face_index"]}</span>
                                                 <span>{location}</span>
                                                 <span>Confidence {sighting["confidence"]:.3f}</span>
                                             </div>

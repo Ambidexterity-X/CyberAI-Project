@@ -153,6 +153,101 @@ st.markdown(
         margin-bottom: 0.9rem;
         font-size: 0.9rem;
     }
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.85rem;
+        margin: 0.9rem 0 1rem;
+    }
+    .summary-card {
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        background: linear-gradient(180deg, rgba(8, 17, 32, 0.82), rgba(15, 23, 42, 0.6));
+    }
+    .summary-label {
+        color: rgba(203, 213, 225, 0.8);
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .summary-value {
+        margin-top: 0.35rem;
+        color: var(--text);
+        font-size: 1.15rem;
+        font-weight: 800;
+    }
+    .summary-note {
+        margin-top: 0.2rem;
+        color: var(--muted);
+        font-size: 0.86rem;
+    }
+    .match-list {
+        display: grid;
+        gap: 0.8rem;
+    }
+    .match-card {
+        padding: 0.95rem 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 1rem;
+        background: rgba(8, 17, 32, 0.54);
+    }
+    .match-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.8rem;
+    }
+    .match-face {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: var(--text);
+        font-size: 0.95rem;
+        font-weight: 750;
+    }
+    .match-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.18rem 0.6rem;
+        font-size: 0.74rem;
+        font-weight: 800;
+        background: rgba(103, 232, 249, 0.12);
+        color: var(--accent);
+    }
+    .match-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem 0.6rem;
+        align-items: center;
+        margin-bottom: 0.35rem;
+        color: rgba(226, 232, 240, 0.94);
+        font-size: 0.88rem;
+    }
+    .match-name {
+        font-weight: 750;
+        color: var(--text);
+    }
+    .confidence-track {
+        height: 0.45rem;
+        margin-top: 0.55rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+        overflow: hidden;
+    }
+    .confidence-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #22c55e, #67e8f9 55%, #8b5cf6);
+    }
+    .match-empty {
+        color: var(--muted);
+        font-size: 0.9rem;
+        padding: 0.6rem 0 0.15rem;
+    }
     .stTabs [data-baseweb="tab-list"] {
         gap: 0.4rem;
         background: rgba(15, 23, 42, 0.38);
@@ -295,10 +390,10 @@ def humanize_timestamp(value: str) -> tuple[str, str, str]:
         human = f"{days} days ago"
     else:
         human = dt.strftime("%b %d, %Y")
-    date_key = dt.strftime("%Y-%m-%d")
-    date_label = dt.strftime("%A, %b %d, %Y")
+    stamp_key = dt.strftime("%Y-%m-%d")
+    stamp_label = dt.strftime("%A, %b %d, %Y")
     time_label = dt.strftime("%I:%M %p").lstrip("0")
-    return date_key, date_label, f"{human} · {time_label}"
+    return stamp_key, stamp_label, f"{human} · {time_label}"
 
 
 st.markdown(
@@ -402,16 +497,69 @@ with tab_search:
                 else:
                     if response.ok:
                         payload = response.json()
-                        st.success(f"Created sightings: {payload['sightings_created']}")
+                        sightings_created = payload["sightings_created"]
+                        st.markdown(
+                            f"""
+                            <div class="section-card">
+                                <div class="summary-grid">
+                                    <div class="summary-card">
+                                        <div class="summary-label">Detected faces</div>
+                                        <div class="summary-value">{len(payload['results'])}</div>
+                                        <div class="summary-note">Faces found in the uploaded probe image.</div>
+                                    </div>
+                                    <div class="summary-card">
+                                        <div class="summary-label">Sightings created</div>
+                                        <div class="summary-value">{len(sightings_created)}</div>
+                                        <div class="summary-note">Recorded automatically because matching was enabled.</div>
+                                    </div>
+                                    <div class="summary-card">
+                                        <div class="summary-label">Threshold</div>
+                                        <div class="summary-value">{threshold:.2f}</div>
+                                        <div class="summary-note">Only matches at or above this score are shown.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        if sightings_created:
+                            st.success(f"Recorded {len(sightings_created)} sighting{'s' if len(sightings_created) != 1 else ''}.")
+                        else:
+                            st.info("No sightings were recorded for this probe image.")
+
+                        st.markdown('<div class="match-list">', unsafe_allow_html=True)
                         for face_result in payload["results"]:
-                            st.markdown("### Detected face")
-                            if not face_result["matches"]:
-                                st.info("No stored faces matched this detection.")
-                                continue
-                            for match in face_result["matches"]:
-                                st.write(
-                                    f"{match['person_name']} | score={match['score']:.3f} | sample={match['sample_id']}"
+                            top_match = max(face_result["matches"], key=lambda item: item["score"], default=None)
+                            st.markdown(
+                                f"""
+                                <div class="match-card">
+                                    <div class="match-header">
+                                        <span class="match-badge">{1 if top_match else 0} match</span>
+                                    </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                            if top_match is None:
+                                st.markdown(
+                                    '<div class="match-empty">No stored faces matched this detection.</div>',
+                                    unsafe_allow_html=True,
                                 )
+                            else:
+                                score = max(0.0, min(float(top_match["score"]), 1.0))
+                                st.markdown(
+                                    f"""
+                                    <div class="match-meta">
+                                        <span class="match-name">{html.escape(top_match['person_name'])}</span>
+                                        <span>Score {score:.3f}</span>
+                                    </div>
+                                    <div class="confidence-track">
+                                        <div class="confidence-fill" style="width: {score * 100:.1f}%;"></div>
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
+                            st.markdown("</div>", unsafe_allow_html=True)
+                        st.markdown("</div>", unsafe_allow_html=True)
                     else:
                         st.error(response.text)
 
@@ -451,19 +599,21 @@ with tab_history:
                             st.info("No sightings recorded for this person.")
                         else:
                             grouped_sightings: dict[str, list[dict]] = defaultdict(list)
-                            date_labels: dict[str, str] = {}
+                            day_labels: dict[str, str] = {}
                             for sighting in sightings:
-                                date_key, date_label, human_label = humanize_timestamp(sighting["spotted_at"])
-                                grouped_sightings[date_key].append({**sighting, "human_label": human_label})
-                                date_labels[date_key] = date_label
+                                sighting_day_key, sighting_day_label, human_label = humanize_timestamp(
+                                    sighting["spotted_at"]
+                                )
+                                grouped_sightings[sighting_day_key].append({**sighting, "human_label": human_label})
+                                day_labels[sighting_day_key] = sighting_day_label
 
                             st.markdown('<div class="timeline-shell">', unsafe_allow_html=True)
-                            for date_key in sorted(grouped_sightings.keys(), reverse=True):
+                            for sighting_day_key in sorted(grouped_sightings.keys(), reverse=True):
                                 st.markdown(
-                                    f'<div class="timeline-day">{html.escape(date_labels[date_key])}</div>',
+                                    f'<div class="timeline-day">{html.escape(day_labels[sighting_day_key])}</div>',
                                     unsafe_allow_html=True,
                                 )
-                                for sighting in grouped_sightings[date_key]:
+                                for sighting in grouped_sightings[sighting_day_key]:
                                     location = html.escape(sighting["location"] or "Unknown location")
                                     human_label = html.escape(sighting["human_label"])
                                     notes = html.escape(sighting["notes"]) if sighting["notes"] else ""
@@ -483,7 +633,17 @@ with tab_history:
                             st.markdown("</div>", unsafe_allow_html=True)
 
                             st.divider()
-                            st.subheader("Clear history")
+                            st.markdown(
+                                """
+                                <div class="section-card">
+                                    <div class="section-header">
+                                        <span class="section-icon">🧹</span>
+                                        <div class="section-title">Clear history</div>
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
                             st.warning("This deletes all sightings for the selected person. It cannot be undone.")
                             confirm_clear = st.checkbox(
                                 f"I understand this will delete {selected['name']}'s sightings.",
@@ -509,9 +669,17 @@ with tab_history:
                     else:
                         st.error(sightings_response.text)
                 st.divider()
-                st.subheader("Remove enrolled user")
-                st.warning(
-                    "This permanently deletes the person, their face samples, and their associated sightings."
+                st.markdown(
+                    """
+                    <div class="section-card">
+                        <div class="section-header">
+                            <span class="section-icon">⛔</span>
+                            <div class="section-title">Remove enrolled user</div>
+                        </div>
+                        <div class="section-copy">This permanently deletes the person, their face samples, and their associated sightings.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
                 confirm_remove = st.checkbox(
                     f"I understand this will remove {selected['name']} from enrollment.",
@@ -524,7 +692,7 @@ with tab_history:
                     key=f"remove_person_{selected['id']}",
                 ):
                     try:
-                        delete_response = api_delete(f"/people/{selected['id']}/sightings")
+                        delete_response = api_delete(f"/people/{selected['id']}")
                     except requests.RequestException as exc:
                         st.error(f"Could not reach backend: {exc}")
                     else:

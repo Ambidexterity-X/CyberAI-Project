@@ -58,6 +58,12 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return float(np.dot(left_vec, right_vec) / denom)
 
 
+def euclidean_distance(left: list[float], right: list[float]) -> float:
+    left_vec = np.asarray(left, dtype=np.float32)
+    right_vec = np.asarray(right, dtype=np.float32)
+    return float(np.linalg.norm(left_vec - right_vec))
+
+
 def embedding_to_json(embedding: list[float]) -> str:
     return json.dumps(embedding)
 

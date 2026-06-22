@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.services.face import FaceEncoding, FaceDetectionError, cosine_similarity, extract_embeddings
+from app.services.face import FaceEncoding, FaceDetectionError, euclidean_distance, extract_embeddings
 from app.services.metadata import extract_captured_at, extract_gps
 from app.store import PersonRecord
 
@@ -37,7 +37,7 @@ def _find_best_match(
     candidates: list[ImageMatch] = []
     for person in people:
         for sample in person["samples"]:
-            score = cosine_similarity(probe.embedding, sample["embedding"])
+            score = euclidean_distance(probe.embedding, sample["embedding"])
             candidates.append(
                 ImageMatch(
                     person_id=person["id"],
@@ -47,7 +47,7 @@ def _find_best_match(
                     sample_id=sample["sample_id"],
                 )
             )
-    candidates.sort(key=lambda c: c.score, reverse=True)
+    candidates.sort(key=lambda c: c.score)  # lower distance = better match
     return candidates[:limit]
 
 
@@ -71,11 +71,16 @@ def scan_shared_directory(
         except (FaceDetectionError, Exception):
             continue
 
-        top_matches: list[ImageMatch] = []
+        # Best match per person across all faces in this image
+        best_per_person: dict[int, ImageMatch] = {}
         for probe in embeddings:
             candidates = _find_best_match(people, probe)
-            if candidates and candidates[0].score >= threshold:
-                top_matches.append(candidates[0])
+            if candidates and candidates[0].score <= threshold:
+                match = candidates[0]
+                existing = best_per_person.get(match.person_id)
+                if existing is None or match.score < existing.score:
+                    best_per_person[match.person_id] = match
+        top_matches = list(best_per_person.values())
 
         if top_matches:
             captured_at = extract_captured_at(image_path).isoformat()

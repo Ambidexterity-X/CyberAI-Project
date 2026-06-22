@@ -484,7 +484,7 @@ with tab_scan:
         format_func=lambda p: p["name"],
         key="scan_person",
     )
-    threshold = st.slider("Match threshold", min_value=0.0, max_value=1.0, value=0.6, step=0.01)
+    threshold = st.slider("Distance threshold (lower = stricter)", min_value=0.0, max_value=1.2, value=0.6, step=0.01)
 
     if st.button("Scan", type="primary"):
         if scan_people and scan_selected["id"] is None and not scan_people:
@@ -636,8 +636,8 @@ with tab_timeline:
                     key="timeline_person",
                 )
                 tl_threshold = st.slider(
-                    "Match threshold",
-                    min_value=0.0, max_value=1.0, value=0.6, step=0.01,
+                    "Distance threshold (lower = stricter)",
+                    min_value=0.0, max_value=1.2, value=0.6, step=0.01,
                     key="timeline_threshold",
                 )
 
